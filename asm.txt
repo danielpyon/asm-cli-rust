@@ -1,0 +1,3 @@
+mov rax, 123
+mov rbx, 456
+

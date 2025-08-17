@@ -5,6 +5,7 @@ use crate::engine::machine::MachineError;
 use rustyline::error::ReadlineError;
 use rustyline::{Cmd, Editor, KeyCode, KeyEvent, Modifiers};
 use unicorn_engine::unicorn_const::Permission;
+use std::fs;
 
 pub mod engine;
 
@@ -41,6 +42,9 @@ struct Args {
 
     #[arg(long, default_value_t = String::from("ALL"))]
     initial_mem_prot: String,
+
+    #[arg(short = 'f', long = "file")]
+    assembly_file: Option<String>,
 }
 
 fn get_machine(arch_name: String) -> Machine<'static> {
@@ -107,6 +111,35 @@ fn main() {
     let mut rl = Editor::<()>::new();
     rl.bind_sequence(KeyEvent(KeyCode::Down, Modifiers::NONE), Cmd::NextHistory);
     rl.bind_sequence(KeyEvent(KeyCode::Up, Modifiers::NONE), Cmd::PreviousHistory);
+
+    // Check if a file is provided via the command line argument
+    if let Some(file_path) = args.assembly_file {
+        if let Ok(content) = fs::read_to_string(&file_path) {
+            for line in content.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let result = m.asm(line.to_string(), 0);
+                match result {
+                    Ok(r) => {
+                        println!(
+                            "{} : {} {} : {}",
+                            Red.paint("mnemonic"),
+                            line.trim(),
+                            Red.paint("hex"),
+                            r
+                        );
+                        m.write_instruction(r.bytes);
+                        m.print_register();
+                        m.print_stack();
+                    }
+                    Err(e) => println!("failed to assemble, err: {:?}", e),
+                }
+            }
+        } else {
+            println!("Failed to read the file: {}", file_path);
+        }
+    }
 
     loop {
         let input = rl.readline(Red.paint(">> ").to_string().as_str());
