@@ -80,6 +80,10 @@ impl<'a> Machine<'a> {
                 cpu::Mode::Mode64 => Ok("x64"),
                 // _ => Err(MachineError::Unsupported),
             },
+            cpu::Arch::ARM => match mode {
+                cpu::Mode::Mode32 => Ok("arm32"),
+                cpu::Mode::Mode64 => Ok("arm64"),
+            }
             // _ => Err(MachineError::Unsupported),
         }
     }
@@ -95,9 +99,12 @@ impl<'a> Machine<'a> {
     pub(crate) fn get_arch_meta_from_name(
         arch_name: &str,
     ) -> Result<Box<dyn cpu::ArchMeta>, MachineError> {
+        // box the cpu because we want to return a trait object
         match arch_name {
             "x32" => Ok(Box::new(cpu::X32::new(cpu::Arch::X86))),
             "x64" => Ok(Box::new(cpu::X64::new(cpu::Arch::X86))),
+            "arm32" => Ok(Box::new(cpu::ARM32::new(cpu::Arch::ARM))),
+            "arm64" => Err(MachineError::Unsupported),
             _ => Err(MachineError::Unsupported),
         }
     }
@@ -223,6 +230,7 @@ impl<'a> Machine<'a> {
     }
 
     fn print_flags(&self, flag_val: u64) {
+        // TODO: move this arch-specific stuff to cpu
         let flag_names = vec!["cf", "zf", "of", "sf", "pf", "af", "df"];
         let name_to_bit = vec![
             ("cf", 0),

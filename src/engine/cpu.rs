@@ -42,7 +42,7 @@ impl TryFrom<unicorn_const::Mode> for Mode {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Arch {
-    X86,
+    X86, ARM
 }
 
 #[allow(clippy::from_over_into)]
@@ -238,15 +238,15 @@ impl ArchMeta for X64 {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ARM {
+pub struct ARM32 {
     inner: Arch,
 }
-impl ARM {
-    pub fn new(arch: Arch) -> ARM {
+impl ARM32 {
+    pub fn new(arch: Arch) -> ARM32 {
         Self { inner: arch }
     }
 }
-impl ArchMeta for ARM {
+impl ArchMeta for ARM32 {
     fn cpu(&self) -> (Arch, Mode) {
         (self.inner, Mode::Mode32)
     }
