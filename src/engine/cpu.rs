@@ -1,7 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom};
 
 use maplit::hashmap;
-use unicorn_engine::{unicorn_const, RegisterX86, Unicorn};
+use unicorn_engine::{unicorn_const, RegisterX86, RegisterARM, Unicorn};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
@@ -171,7 +171,7 @@ pub struct X64 {
 }
 impl X64 {
     pub fn new(arch: Arch) -> X64 {
-        X64 { inner: arch }
+        Self { inner: arch }
     }
 }
 impl ArchMeta for X64 {
@@ -229,6 +229,69 @@ impl ArchMeta for X64 {
             "es"    => i32::from(RegisterX86::ES),
             "fs"    => i32::from(RegisterX86::FS),
             "gs"    => i32::from(RegisterX86::GS),
+        }
+    }
+
+    fn dump_registers(&self, emu: &Unicorn<'static, ()>) -> HashMap<&'static str, u64> {
+        self.inner.dump_registers(emu, self.register_map())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ARM {
+    inner: Arch,
+}
+impl ARM {
+    pub fn new(arch: Arch) -> ARM {
+        Self { inner: arch }
+    }
+}
+impl ArchMeta for ARM {
+    fn cpu(&self) -> (Arch, Mode) {
+        (self.inner, Mode::Mode32)
+    }
+
+    fn sp_reg(&self) -> i32 {
+        13 // r13
+    }
+    fn fp_reg(&self) -> i32 {
+        11 // r11
+    }
+
+    fn int_size(&self) -> usize {
+        32 / 8
+    }
+
+    fn sorted_reg_names(&self) -> Vec<&'static str> {
+        vec![
+            "r0", "r1", "r2", "r3", "end", //
+            "r4", "r5", "r6", "r7", "end", //
+            "r8", "r9", "r10", "r11", "end", //
+            "r12", "sp", "lr", "pc", "end", //
+            "cpsr", "end", //
+        ]
+    }
+
+    fn register_map(&self) -> HashMap<&'static str, i32> {
+        // register to trace, display, etc.
+        hashmap! {
+            "r0"   => i32::from(RegisterARM::R0),
+            "r1"   => i32::from(RegisterARM::R1),
+            "r2"   => i32::from(RegisterARM::R2),
+            "r3"   => i32::from(RegisterARM::R3),
+            "r4"   => i32::from(RegisterARM::R4),
+            "r5"   => i32::from(RegisterARM::R5),
+            "r6"   => i32::from(RegisterARM::R6),
+            "r7"   => i32::from(RegisterARM::R7),
+            "r8"   => i32::from(RegisterARM::R8),
+            "r9"   => i32::from(RegisterARM::R9),
+            "r10"  => i32::from(RegisterARM::R10),
+            "r11"  => i32::from(RegisterARM::R11),
+            "r12"  => i32::from(RegisterARM::R12),
+            "sp"   => i32::from(RegisterARM::R13),
+            "lr"   => i32::from(RegisterARM::R14),
+            "pc"   => i32::from(RegisterARM::R15),
+            "cpsr" => i32::from(RegisterARM::CPSR),
         }
     }
 
