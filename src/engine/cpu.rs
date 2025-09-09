@@ -79,16 +79,15 @@ impl Arch {
         emu: &Unicorn<'static, ()>,
         registers: HashMap<&'static str, i32>,
     ) -> HashMap<&'static str, u64> {
-        registers
-            .keys()
-            .filter(|&&x| x != "end") // "end" is pseudo-register (to add new row)
-            .map(|&reg_name| {
-                (
-                    reg_name,
-                    emu.reg_read(*registers.get(reg_name).unwrap()).unwrap(),
-                )
-            })
-            .collect::<HashMap<_, _>>()
+        let mut reg_dump = HashMap::new();
+        for (reg_name, reg_num) in registers.iter() {
+            if *reg_name == "end" {
+                continue;
+            }
+            let reg_val = emu.reg_read(*reg_num).unwrap();
+            reg_dump.insert(*reg_name, reg_val);
+        }
+        reg_dump
     }
 }
 

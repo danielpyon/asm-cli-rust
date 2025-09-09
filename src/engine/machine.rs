@@ -201,7 +201,6 @@ impl<'a> Machine<'a> {
             .mem_read_as_vec(start_address, self.byte_size * 4 * 5)
             .unwrap();
 
-        // 8 个字节打印一次
         (0..mem_data.len())
             .step_by(4 * self.byte_size)
             .for_each(|idx| {
