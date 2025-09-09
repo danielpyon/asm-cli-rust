@@ -18,12 +18,18 @@ pub struct Machine<'a> {
     pub register_map: HashMap<&'a str, i32>,
     pub assembler: keystone::Keystone,
     pub emu: Unicorn<'static, ()>,
+    
     pub sorted_reg_names: Vec<&'a str>,
-    pub byte_size: usize,
+    pub word_size: usize,
     pub previous_reg_value: HashMap<&'a str, u64>,
+    
+    pub sorted_flags_names: Vec<&'static str>,
+    pub flags_bit_positions: HashMap<&'static str, i32>,
+
     pub cpu: (cpu::Arch, cpu::Mode),
     pub sp: i32, // stack pointer
     pub fp: i32, // stack frame
+    pub flags: i32, // status flags
 }
 
 impl<'a> Machine<'a> {
@@ -33,7 +39,7 @@ impl<'a> Machine<'a> {
         let arch_meta = Self::get_arch_meta(arch, mode)?;
 
         let register_map = arch_meta.register_map();
-        let prev_reg_value = arch_meta.dump_registers(&emu);
+        let previous_reg_value = arch_meta.dump_registers(&emu);
 
         Ok(Self {
             emu,
@@ -41,12 +47,16 @@ impl<'a> Machine<'a> {
 
             register_map,
             sorted_reg_names: arch_meta.sorted_reg_names(),
-            byte_size: arch_meta.int_size(),
-            previous_reg_value: prev_reg_value,
+            word_size: arch_meta.word_size(),
+            previous_reg_value,
+
+            sorted_flags_names: arch_meta.sorted_flags_names(),
+            flags_bit_positions: arch_meta.flags_bit_positions(),
             cpu: arch_meta.cpu(),
 
             sp: arch_meta.sp_reg(),
             fp: arch_meta.fp_reg(),
+            flags: arch_meta.flags_reg(),
         })
     }
 
@@ -149,7 +159,7 @@ impl<'a> Machine<'a> {
             let reg_val = self.emu.reg_read(uc_reg).unwrap();
             let previous_reg_val = *self.previous_reg_value.get(reg_name).unwrap();
 
-            let reg_val_str = match self.byte_size {
+            let reg_val_str = match self.word_size {
                 4 => format!("0x{:08x}", reg_val),
                 8 => format!("0x{:016x}", reg_val),
                 _ => unreachable!(),
@@ -161,10 +171,12 @@ impl<'a> Machine<'a> {
                 print!("{} : {} ", padded_reg_name, reg_val_str);
             }
             current_reg_val_map.insert(reg_name, reg_val);
-            if reg_name == "flags" {
-                self.print_flags(reg_val);
+
+            if uc_reg == self.flags {
+                self.print_flags(reg_val)
             }
         }
+
         self.previous_reg_value = current_reg_val_map;
     }
 
@@ -190,21 +202,20 @@ impl<'a> Machine<'a> {
         );
         let cur_sp_val = self.emu.reg_read(self.sp).unwrap();
 
-        //let start_address = (0x1300000 - 8 * self.byte_size) as u64;
         let mut start_address: u64 = 0x1300000;
-        while cur_sp_val < start_address - 4 * self.byte_size as u64 {
-            start_address -= 4 * self.byte_size as u64;
+        while cur_sp_val < start_address - 4 * self.word_size as u64 {
+            start_address -= 4 * self.word_size as u64;
         }
-        start_address -= 8 * self.byte_size as u64;
+        start_address -= 8 * self.word_size as u64;
         let mem_data = self
             .emu
-            .mem_read_as_vec(start_address, self.byte_size * 4 * 5)
+            .mem_read_as_vec(start_address, self.word_size * 4 * 5)
             .unwrap();
 
         (0..mem_data.len())
-            .step_by(4 * self.byte_size)
+            .step_by(4 * self.word_size)
             .for_each(|idx| {
-                match self.byte_size {
+                match self.word_size {
                     4 => print!("{:08x} : ", start_address + idx as u64),
                     8 => print!("{:016x} : ", start_address + idx as u64),
                     _ => unreachable!(),
@@ -212,8 +223,8 @@ impl<'a> Machine<'a> {
 
                 (0..4).for_each(|offset| {
                     let (start_pos, end_pos) = (
-                        idx + offset * self.byte_size,
-                        idx + offset * self.byte_size + self.byte_size,
+                        idx + offset * self.word_size,
+                        idx + offset * self.word_size + self.word_size,
                     );
                     let mut cur = mem_data[start_pos..end_pos].to_vec();
                     cur.reverse();
@@ -228,29 +239,23 @@ impl<'a> Machine<'a> {
         println!();
     }
 
-    fn print_flags(&self, flag_val: u64) {
-        // TODO: move this arch-specific stuff to cpu
-        let flag_names = vec!["cf", "zf", "of", "sf", "pf", "af", "df"];
-        let name_to_bit = vec![
-            ("cf", 0),
-            ("pf", 2),
-            ("af", 4),
-            ("zf", 6),
-            ("sf", 7),
-            ("df", 10),
-            ("of", 11),
-        ]
-        .into_iter()
-        .collect::<HashMap<_, _>>();
-
-        for flag_name in flag_names {
-            let bit_pos = name_to_bit.get(flag_name).unwrap();
-            let flag_val = flag_val >> (*bit_pos as u64) & 1;
-            match flag_val {
-                0 => print!("{}({}) ", flag_name, flag_val),
-                1 => print!("{} ", Blue.paint(format!("{}({})", flag_name, flag_val))),
-                _ => unreachable!(),
+    fn print_flags(&self, flags_val: u64) {
+        let flag_name_and_value = self.sorted_flags_names
+            .iter()
+            .map(|&flag_name |
+                (
+                    flag_name,
+                    flags_val >> self.flags_bit_positions.get(flag_name).unwrap() & 1 == 1
+                )
+            );
+        flag_name_and_value.for_each(|(flag_name, flag_value)| {
+                if flag_value {
+                    print!("{}({}) ", flag_name, u8::from(flag_value));
+                }
+                else {
+                    print!("{} ", Blue.paint(format!("{}({})", flag_name, u8::from(flag_value))));
+                }
             }
-        }
+        );
     }
 }

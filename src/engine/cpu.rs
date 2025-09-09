@@ -1,7 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom};
 
 use maplit::hashmap;
-use unicorn_engine::{unicorn_const, RegisterX86, RegisterARM, Unicorn};
+use unicorn_engine::{unicorn_const, RegisterARM, RegisterX86, Unicorn};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
@@ -70,6 +70,7 @@ impl TryFrom<unicorn_const::Arch> for Arch {
     fn try_from(value: unicorn_const::Arch) -> Result<Self, Self::Error> {
         match value {
             unicorn_const::Arch::X86 => Ok(Self::X86),
+            unicorn_const::Arch::ARM => Ok(Self::ARM),
             _ => Err("unsupported arch"),
         }
     }
@@ -82,25 +83,44 @@ impl Arch {
         registers: HashMap<&'static str, i32>,
     ) -> HashMap<&'static str, u64> {
         let mut reg_dump = HashMap::new();
-        for (reg_name, reg_num) in registers.iter() {
-            if *reg_name == "end" {
+        for (reg_name, reg_num) in registers {
+            if reg_name == "end" {
                 continue;
             }
-            let reg_val = emu.reg_read(*reg_num).unwrap();
-            reg_dump.insert(*reg_name, reg_val);
+            let reg_val = emu.reg_read(reg_num).unwrap();
+            reg_dump.insert(reg_name, reg_val);
         }
         reg_dump
     }
+
+    /*
+    fn dump_flags(
+        &self,
+        emu: &Unicorn<'static, ()>,
+        flags_reg: i32,
+        flags_bit_positions: HashMap<&'static str, i32>,
+    ) -> HashMap<&'static str, bool> {
+        let flags = emu.reg_read(flags_reg).unwrap();
+        flags_bit_positions.into_iter().map(|(flag, bit_pos)| {
+            (flag, (flags >> bit_pos) & 1 == 1)
+        }).collect()
+    }
+    */
 }
 
 pub trait ArchMeta {
     fn cpu(&self) -> (Arch, Mode);
     fn sp_reg(&self) -> i32;
     fn fp_reg(&self) -> i32;
-    fn int_size(&self) -> usize;
+    fn flags_reg(&self) -> i32;
+    fn word_size(&self) -> usize;
+
     fn sorted_reg_names(&self) -> Vec<&'static str>;
     fn register_map(&self) -> HashMap<&'static str, i32>;
     fn dump_registers(&self, emu: &Unicorn<'static, ()>) -> HashMap<&'static str, u64>;
+
+    fn sorted_flags_names(&self) -> Vec<&'static str>;
+    fn flags_bit_positions(&self) -> HashMap<&'static str, i32>;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -123,8 +143,11 @@ impl ArchMeta for X32 {
     fn fp_reg(&self) -> i32 {
         i32::from(RegisterX86::EBP)
     }
+    fn flags_reg(&self) -> i32 {
+        i32::from(RegisterX86::EFLAGS)
+    }
 
-    fn int_size(&self) -> usize {
+    fn word_size(&self) -> usize {
         32 / 8
     }
 
@@ -164,6 +187,21 @@ impl ArchMeta for X32 {
     fn dump_registers(&self, emu: &Unicorn<'static, ()>) -> HashMap<&'static str, u64> {
         self.inner.dump_registers(emu, self.register_map())
     }
+
+    fn sorted_flags_names(&self) -> Vec<&'static str> {
+        vec!["cf", "zf", "of", "sf", "pf", "af", "df"]
+    }
+    fn flags_bit_positions(&self) -> HashMap<&'static str, i32> {
+        hashmap! {
+            "cf" => 0,
+            "pf" => 2,
+            "af" => 4,
+            "zf" => 6,
+            "sf" => 7,
+            "df" => 10,
+            "of" => 11,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -186,8 +224,11 @@ impl ArchMeta for X64 {
     fn fp_reg(&self) -> i32 {
         i32::from(RegisterX86::RBP)
     }
+    fn flags_reg(&self) -> i32 {
+        i32::from(RegisterX86::EFLAGS)
+    }
 
-    fn int_size(&self) -> usize {
+    fn word_size(&self) -> usize {
         64 / 8
     }
 
@@ -236,6 +277,21 @@ impl ArchMeta for X64 {
     fn dump_registers(&self, emu: &Unicorn<'static, ()>) -> HashMap<&'static str, u64> {
         self.inner.dump_registers(emu, self.register_map())
     }
+
+    fn sorted_flags_names(&self) -> Vec<&'static str> {
+        vec!["cf", "zf", "of", "sf", "pf", "af", "df"]
+    }
+    fn flags_bit_positions(&self) -> HashMap<&'static str, i32> {
+        hashmap! {
+            "cf" => 0,
+            "pf" => 2,
+            "af" => 4,
+            "zf" => 6,
+            "sf" => 7,
+            "df" => 10,
+            "of" => 11,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -253,13 +309,16 @@ impl ArchMeta for ARM32 {
     }
 
     fn sp_reg(&self) -> i32 {
-        13 // r13
+        i32::from(RegisterARM::R13)
     }
     fn fp_reg(&self) -> i32 {
-        11 // r11
+        i32::from(RegisterARM::R11)
+    }
+    fn flags_reg(&self) -> i32 {
+        i32::from(RegisterARM::CPSR)
     }
 
-    fn int_size(&self) -> usize {
+    fn word_size(&self) -> usize {
         32 / 8
     }
 
@@ -272,7 +331,6 @@ impl ArchMeta for ARM32 {
             "cpsr", "end", //
         ]
     }
-
     fn register_map(&self) -> HashMap<&'static str, i32> {
         // register to trace, display, etc.
         hashmap! {
@@ -295,8 +353,19 @@ impl ArchMeta for ARM32 {
             "cpsr" => i32::from(RegisterARM::CPSR),
         }
     }
-
     fn dump_registers(&self, emu: &Unicorn<'static, ()>) -> HashMap<&'static str, u64> {
         self.inner.dump_registers(emu, self.register_map())
+    }
+
+    fn sorted_flags_names(&self) -> Vec<&'static str> {
+        vec!["N", "Z", "C", "V"]
+    }
+    fn flags_bit_positions(&self) -> HashMap<&'static str, i32> {
+        hashmap! {
+            "N" => 31,
+            "Z" => 30,
+            "C" => 29,
+            "V" => 28,
+        }
     }
 }
