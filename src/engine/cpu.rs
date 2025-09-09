@@ -50,6 +50,7 @@ impl Into<unicorn_const::Arch> for Arch {
     fn into(self) -> unicorn_const::Arch {
         match self {
             Self::X86 => unicorn_const::Arch::X86,
+            Self::ARM => unicorn_const::Arch::ARM
         }
     }
 }
@@ -59,6 +60,7 @@ impl Into<keystone::Arch> for Arch {
     fn into(self) -> keystone::Arch {
         match self {
             Self::X86 => keystone::Arch::X86,
+            Self::ARM => keystone::Arch::ARM
         }
     }
 }
