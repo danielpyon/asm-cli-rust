@@ -65,6 +65,9 @@ fn main() {
     // let args: Vec<String> = env::args().collect();
     let args = Args::parse();
 
+    // reset the terminal
+    print!("\x1bc");
+
     let arch_name = match args.arch {
         Some(r) => r,
         None => "x64".to_string(),
@@ -145,6 +148,7 @@ fn main() {
         let input = rl.readline(Red.paint(">> ").to_string().as_str());
         match input {
             Ok(line) => {
+                print!("\x1bc");
                 let result = m.asm(line.to_string(), 0);
                 if line.is_empty() {
                     println!("failed to assemble, err: {:?}", Err::<Error, MachineError>(MachineError::Unsupported));
